@@ -55,7 +55,8 @@
         } else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) {
           flushPara(); if (list !== "ol") { flushList(); html += "<ol>"; list = "ol"; }
           html += `<li>${inline(m[1])}</li>`;
-        } else if (line.trim() === "") { flushPara(); flushList(); }
+        } else if (/^\s*([-*_])\1{2,}\s*$/.test(line)) { flushPara(); flushList(); html += "<hr>"; }
+        else if (line.trim() === "") { flushPara(); } // blank lines inside a list must not restart its numbering
         else { flushList(); para.push(inline(line)); }
       }
       flushPara(); flushList();
@@ -192,6 +193,15 @@
 
   const fmt = (n) => Number(n).toLocaleString();
 
+  // Small robot face used as the assistant avatar (animated while a reply streams in).
+  const MINI_ROBOT =
+    '<svg class="mini-robot" viewBox="0 0 32 32" aria-hidden="true">' +
+    '<line class="m-stem" x1="16" y1="5.5" x2="16" y2="9.5" stroke-width="1.8" stroke-linecap="round"/>' +
+    '<circle class="m-dot" cx="16" cy="4.5" r="2"/>' +
+    '<rect class="m-head" x="5" y="9.5" width="22" height="17" rx="6"/>' +
+    '<g class="m-eyes"><circle class="m-eye" cx="11.6" cy="17.5" r="2.2"/><circle class="m-eye" cx="20.4" cy="17.5" r="2.2"/></g>' +
+    "</svg>";
+
   function usageText(u) {
     if (!u || u.input_tokens == null || u.output_tokens == null) return "";
     return `${fmt(u.input_tokens)} in · ${fmt(u.output_tokens)} out · ${fmt(u.input_tokens + u.output_tokens)} tokens`;
@@ -222,7 +232,7 @@
     } else {
       const avatar = document.createElement("div");
       avatar.className = "avatar";
-      avatar.textContent = "AI";
+      avatar.innerHTML = MINI_ROBOT;
       const body = document.createElement("div");
       body.className = "body";
       const usageEl = document.createElement("div");
@@ -337,6 +347,7 @@
     setBusy(true);
 
     const { row, bubble } = addMessage("bot");
+    row.classList.add("streaming"); // animates the robot avatar while we wait for / receive the reply
     bubble.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
     scrollDown();
     let reply = "";
@@ -398,6 +409,7 @@
             });
           } else if (event === "done") {
             finished = true;
+            row.classList.remove("streaming");
             setBusy(false); // re-enable input; the title event may still follow
           } else if (event === "title") {
             upsertConversation({ id: data.conversation_id, title: data.title });
@@ -416,6 +428,7 @@
         bubble.textContent = err.message || "Something went wrong.";
       }
     } finally {
+      row.classList.remove("streaming");
       setBusy(false);
     }
   }
