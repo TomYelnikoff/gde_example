@@ -93,28 +93,24 @@ commit SHA and `latest`) → deploy to EC2 over SSH → health check, with an **
 container if the new one is not healthy. AWS access uses OIDC (no keys stored in GitHub), and port 22 is opened to
 the runner's IP only for the length of the deploy.
 
-One-time setup:
+**No GitHub secrets or variables are needed.** The role ARN, instance ID and security group ID are written in the
+workflow (they are identifiers, not secrets); GitHub proves its identity to AWS with a short-lived OIDC token.
 
-1. **Create the IAM role** (needs IAM permissions):
-   ```bash
-   aws cloudformation deploy --region us-east-1 \
-     --template-file infra/github-actions-role.yml \
-     --stack-name gde-chatbot-github-actions --capabilities CAPABILITY_NAMED_IAM \
-     --parameter-overrides InstanceId=i-XXXX SecurityGroupId=sg-XXXX
-   # add CreateOidcProvider=false if the account already has the GitHub OIDC provider
-   aws cloudformation describe-stacks --stack-name gde-chatbot-github-actions \
-     --query "Stacks[0].Outputs[0].OutputValue" --output text      # the role ARN
-   ```
-2. **Add to the GitHub repo** (Settings → Secrets and variables → Actions):
+One-time setup, on the AWS side only: create the IAM role the workflow assumes (needs IAM permissions). Its trust
+policy accepts only this repository's `main` branch.
 
-   | Kind | Name | Value |
-   |---|---|---|
-   | Secret | `AWS_ROLE_ARN` | the role ARN from step 1 |
-   | Variable | `EC2_INSTANCE_ID` | `i-XXXX` |
-   | Variable | `EC2_SECURITY_GROUP_ID` | `sg-XXXX` |
-   | Variable (optional) | `AWS_REGION`, `ECR_REPOSITORY`, `EC2_OS_USER` | defaults: `us-east-1`, `bedrock-chatbot`, `ubuntu` |
+```bash
+aws cloudformation deploy --region us-east-1 \
+  --template-file infra/github-actions-role.yml \
+  --stack-name gde-chatbot-github-actions --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides InstanceId=i-050677d3d363b3bdb SecurityGroupId=sg-05ba916a44fc5307f
+# this account already has the GitHub OIDC provider, so CreateOidcProvider stays "false";
+# in a new account add: CreateOidcProvider=true
+```
 
-3. **Push to `main`** (or run the workflow manually from the Actions tab).
+After that, every push to `main` deploys (or run the workflow manually from the Actions tab). To point the
+workflow at another instance or role, edit the `env:` block at the top of the workflow, or set repository
+variables with the same names (`EC2_INSTANCE_ID`, `EC2_SECURITY_GROUP_ID`, `AWS_ROLE_ARN`, ...).
 
 The instance needs Docker and the `chatbot` container set up once (as described above); the workflow only
 replaces the image. Run the tests locally with `python -m unittest discover -s tests -t . -v`.

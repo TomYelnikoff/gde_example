@@ -26,9 +26,11 @@ Parameters:
     Default: ubuntu
   CreateOidcProvider:
     Type: String
-    Default: "true"
+    Default: "false"
     AllowedValues: ["true", "false"]
-    Description: Set to false if this account already has the token.actions.githubusercontent.com OIDC provider
+    Description: >
+      Set to true only if the account does NOT yet have the token.actions.githubusercontent.com
+      OIDC provider (an account can have just one).
 
 Conditions:
   MakeProvider: !Equals [!Ref CreateOidcProvider, "true"]
@@ -101,5 +103,5 @@ Resources:
 
 Outputs:
   RoleArn:
-    Description: Put this in the GitHub repository secret AWS_ROLE_ARN
+    Description: The role the workflow assumes (already set in .github/workflows/deploy.yml)
     Value: !GetAtt DeployRole.Arn
