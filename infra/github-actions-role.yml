@@ -9,6 +9,14 @@ Parameters:
     Type: String
     Default: TomYelnikoff/gde_example
     Description: owner/name of the GitHub repository
+  GitHubOwnerId:
+    Type: String
+    Default: "44921618"
+    Description: "Numeric ID of the repository owner (GitHub API field owner.id)"
+  GitHubRepoId:
+    Type: String
+    Default: "1453009135"
+    Description: "Numeric ID of the repository (GitHub API field id)"
   GitHubBranch:
     Type: String
     Default: main
@@ -61,7 +69,15 @@ Resources:
             Condition:
               StringEquals:
                 "token.actions.githubusercontent.com:aud": sts.amazonaws.com
-                "token.actions.githubusercontent.com:sub": !Sub "repo:${GitHubRepo}:ref:refs/heads/${GitHubBranch}"
+                # GitHub's subject claim may embed the immutable owner/repo IDs
+                # (repo:owner@123/name@456:ref:...) or use names only; accept either,
+                # both pinned to this repository and branch.
+                "token.actions.githubusercontent.com:sub":
+                  - !Sub "repo:${GitHubRepo}:ref:refs/heads/${GitHubBranch}"
+                  - !Sub
+                    - "repo:${Owner}@${GitHubOwnerId}/${Name}@${GitHubRepoId}:ref:refs/heads/${GitHubBranch}"
+                    - Owner: !Select [0, !Split ["/", !Ref GitHubRepo]]
+                      Name: !Select [1, !Split ["/", !Ref GitHubRepo]]
       Policies:
         - PolicyName: deploy
           PolicyDocument:
