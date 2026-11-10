@@ -1,0 +1,159 @@
+name: Deploy
+
+# Every push to main: test -> build image -> push to ECR -> deploy to EC2.
+# Setup (one time): see "Automatic deployment" in DEPLOY.md.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", ".gitignore"]
+  workflow_dispatch:
+
+# One deployment at a time; a newer push waits for the running one to finish.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'bedrock-chatbot' }}
+  EC2_OS_USER: ${{ vars.EC2_OS_USER || 'ubuntu' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -t . -v
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write   # OIDC: short-lived AWS credentials, no stored keys
+      contents: read
+    env:
+      INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      SECURITY_GROUP_ID: ${{ vars.EC2_SECURITY_GROUP_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check configuration
+        env:
+          ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          missing=0
+          [ -n "$ROLE_ARN" ]          || { echo "::error::Secret AWS_ROLE_ARN is not set"; missing=1; }
+          [ -n "$INSTANCE_ID" ]       || { echo "::error::Repository variable EC2_INSTANCE_ID is not set"; missing=1; }
+          [ -n "$SECURITY_GROUP_ID" ] || { echo "::error::Repository variable EC2_SECURITY_GROUP_ID is not set"; missing=1; }
+          [ "$missing" = 0 ] || { echo "See 'Automatic deployment' in DEPLOY.md"; exit 1; }
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Find the instance
+        id: instance
+        run: |
+          read -r state host az < <(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].[State.Name,PublicIpAddress,Placement.AvailabilityZone]' --output text)
+          echo "Instance $INSTANCE_ID: state=$state ip=$host az=$az"
+          if [ "$state" != running ] || [ "$host" = None ]; then
+            echo "::error::The instance is not running or has no public IP"; exit 1
+          fi
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "az=$az" >> "$GITHUB_OUTPUT"
+
+      # Port 22 stays closed to the world; it is opened to this runner only, for the length of the deploy.
+      - name: Open SSH for this runner
+        id: ssh_open
+        run: |
+          runner_ip=$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')
+          aws ec2 authorize-security-group-ingress --group-id "$SECURITY_GROUP_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${runner_ip}/32,Description=github-actions-run-${GITHUB_RUN_ID}}]" >/dev/null
+          echo "ip=$runner_ip" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to the instance
+        env:
+          HOST: ${{ steps.instance.outputs.host }}
+          AZ: ${{ steps.instance.outputs.az }}
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
+          KEY="$RUNNER_TEMP/deploy_key"
+          ssh-keygen -t ed25519 -N '' -f "$KEY" -q
+
+          # EC2 Instance Connect: the public key is accepted for 60 seconds, so push it right before each login.
+          remote() {
+            aws ec2-instance-connect send-ssh-public-key --instance-id "$INSTANCE_ID" \
+              --availability-zone "$AZ" --instance-os-user "$EC2_OS_USER" \
+              --ssh-public-key "file://$KEY.pub" >/dev/null
+            ssh -i "$KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -o ConnectTimeout=20 \
+              -o ServerAliveInterval=15 "$EC2_OS_USER@$HOST" "$@"
+          }
+
+          ok=0
+          for attempt in 1 2 3 4 5 6; do
+            if remote true </dev/null; then ok=1; break; fi
+            echo "SSH not ready yet (attempt $attempt), retrying..."; sleep 8
+          done
+          [ "$ok" = 1 ] || { echo "::error::Could not SSH into the instance"; exit 1; }
+
+          echo "Logging the instance in to ECR"
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | remote "sudo docker login --username AWS --password-stdin $REGISTRY" >/dev/null
+
+          echo "Deploying $IMAGE"
+          remote "IMAGE='$IMAGE' REGISTRY='$REGISTRY' AWS_REGION='$AWS_REGION' bash -s" < deploy/remote-deploy.sh
+
+      - name: Close SSH for this runner
+        if: always() && steps.ssh_open.outputs.ip != ''
+        run: |
+          aws ec2 revoke-security-group-ingress --group-id "$SECURITY_GROUP_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.ssh_open.outputs.ip }}/32}]" >/dev/null
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "### Deployed :rocket:"
+            echo "- Commit: \`${GITHUB_SHA::7}\`"
+            echo "- Image: \`$ECR_REPOSITORY:${GITHUB_SHA}\`"
+            echo "- Instance: \`$INSTANCE_ID\`"
+          } >> "$GITHUB_STEP_SUMMARY"

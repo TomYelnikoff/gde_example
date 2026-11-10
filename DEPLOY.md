@@ -86,6 +86,39 @@ container restarts and image upgrades. Back it up with e.g.
 `docker run --rm -v chat-data:/data -v $PWD:/backup alpine cp /data/chat.db /backup/`.
 SQLite means a single instance – don't run several replicas against it.
 
+## Automatic deployment (GitHub Actions)
+
+Every push to `main` runs `.github/workflows/deploy.yml`: tests → build image → push to ECR (tagged with the
+commit SHA and `latest`) → deploy to EC2 over SSH → health check, with an **automatic rollback** to the previous
+container if the new one is not healthy. AWS access uses OIDC (no keys stored in GitHub), and port 22 is opened to
+the runner's IP only for the length of the deploy.
+
+One-time setup:
+
+1. **Create the IAM role** (needs IAM permissions):
+   ```bash
+   aws cloudformation deploy --region us-east-1 \
+     --template-file infra/github-actions-role.yml \
+     --stack-name gde-chatbot-github-actions --capabilities CAPABILITY_NAMED_IAM \
+     --parameter-overrides InstanceId=i-XXXX SecurityGroupId=sg-XXXX
+   # add CreateOidcProvider=false if the account already has the GitHub OIDC provider
+   aws cloudformation describe-stacks --stack-name gde-chatbot-github-actions \
+     --query "Stacks[0].Outputs[0].OutputValue" --output text      # the role ARN
+   ```
+2. **Add to the GitHub repo** (Settings → Secrets and variables → Actions):
+
+   | Kind | Name | Value |
+   |---|---|---|
+   | Secret | `AWS_ROLE_ARN` | the role ARN from step 1 |
+   | Variable | `EC2_INSTANCE_ID` | `i-XXXX` |
+   | Variable | `EC2_SECURITY_GROUP_ID` | `sg-XXXX` |
+   | Variable (optional) | `AWS_REGION`, `ECR_REPOSITORY`, `EC2_OS_USER` | defaults: `us-east-1`, `bedrock-chatbot`, `ubuntu` |
+
+3. **Push to `main`** (or run the workflow manually from the Actions tab).
+
+The instance needs Docker and the `chatbot` container set up once (as described above); the workflow only
+replaces the image. Run the tests locally with `python -m unittest discover -s tests -t . -v`.
+
 ## Config (environment variables)
 
 `AWS_REGION` (default us-east-1), `BEDROCK_MODEL_ID`, `MAX_TOKENS` (2048), `TEMPERATURE` (0.5), `DB_PATH` (/data/chat.db).

@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  IAM role that lets the GitHub Actions deploy workflow push the image to ECR and
+  deploy to one EC2 instance. Uses GitHub OIDC (no stored AWS keys) and can only
+  be assumed by pushes to one branch of one repository.
+
+Parameters:
+  GitHubRepo:
+    Type: String
+    Default: TomYelnikoff/gde_example
+    Description: owner/name of the GitHub repository
+  GitHubBranch:
+    Type: String
+    Default: main
+  EcrRepositoryName:
+    Type: String
+    Default: bedrock-chatbot
+  InstanceId:
+    Type: String
+    Description: EC2 instance to deploy to (i-...)
+  SecurityGroupId:
+    Type: String
+    Description: Security group of that instance (sg-...); the workflow temporarily opens SSH in it
+  InstanceOsUser:
+    Type: String
+    Default: ubuntu
+  CreateOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Set to false if this account already has the token.actions.githubusercontent.com OIDC provider
+
+Conditions:
+  MakeProvider: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "github-actions-${EcrRepositoryName}-deploy"
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRoleWithWebIdentity
+            Principal:
+              Federated: !If
+                - MakeProvider
+                - !Ref GitHubOidcProvider
+                - !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Condition:
+              StringEquals:
+                "token.actions.githubusercontent.com:aud": sts.amazonaws.com
+                "token.actions.githubusercontent.com:sub": !Sub "repo:${GitHubRepo}:ref:refs/heads/${GitHubBranch}"
+      Policies:
+        - PolicyName: deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: EcrLogin
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: EcrPush
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:DescribeImages
+                Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${EcrRepositoryName}"
+              - Sid: FindInstance
+                Effect: Allow
+                Action: ec2:DescribeInstances
+                Resource: "*"
+              - Sid: OpenAndCloseSshForTheRunner
+                Effect: Allow
+                Action:
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupIngress
+                Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/${SecurityGroupId}"
+              - Sid: TemporarySshKey
+                Effect: Allow
+                Action: ec2-instance-connect:SendSSHPublicKey
+                Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${InstanceId}"
+                Condition:
+                  StringEquals:
+                    "ec2:osuser": !Ref InstanceOsUser
+
+Outputs:
+  RoleArn:
+    Description: Put this in the GitHub repository secret AWS_ROLE_ARN
+    Value: !GetAtt DeployRole.Arn

@@ -4,6 +4,10 @@ __pycache__/
 chat.db
 chat.db-journal
 .secret_key
+.github/
+deploy/
+infra/
+tests/
 test_bedrock.py
 .git/
 .gitignore
