@@ -8,9 +8,7 @@
 </head>
 <body class="auth-body">
   <main class="auth-card">
-    <div class="logo auth-logo" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-    </div>
+    <div class="hero-robot small" title="Say hi!">{% include '_robot.html' %}</div>
     <h1>{{ 'Create your account' if mode == 'signup' else 'Welcome back' }}</h1>
     <p class="auth-sub">{{ 'Sign up to start chatting and keep your conversation history.' if mode == 'signup' else 'Sign in to continue to Chat Assistant.' }}</p>
 
@@ -38,6 +36,7 @@
       {% else %}Don't have an account? <a href="{{ url_for('signup_page') }}">Sign up</a>{% endif %}
     </p>
   </main>
+  <script src="{{ url_for('static', filename='robot.js') }}"></script>
   <script src="{{ url_for('static', filename='auth.js') }}"></script>
 </body>
 </html>

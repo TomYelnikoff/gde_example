@@ -63,6 +63,7 @@
       <main id="chat" class="chat" aria-live="polite">
         <div id="thread" class="thread">
           <section id="welcome" class="welcome">
+            <div class="hero-robot" title="Say hi!">{% include '_robot.html' %}</div>
             <h2>How can I help you today?</h2>
             <div class="suggestions">
               <button type="button" class="chip">Explain how DNS works in simple terms</button>
@@ -89,6 +90,7 @@
       </footer>
     </div>
   </div>
+  <script src="{{ url_for('static', filename='robot.js') }}"></script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

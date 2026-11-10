@@ -5,9 +5,16 @@
   const mode = form.dataset.mode; // "login" | "signup"
   const label = submit.textContent;
 
+  const robot = document.querySelector(".hero-robot");
+
   function showError(msg) {
     errorEl.textContent = msg;
     errorEl.hidden = !msg;
+    if (msg && robot) { // the robot shakes its head
+      robot.classList.remove("shake");
+      void robot.offsetWidth;
+      robot.classList.add("shake");
+    }
   }
 
   form.addEventListener("submit", async (e) => {
