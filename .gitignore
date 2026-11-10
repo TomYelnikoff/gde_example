@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets and local data - never commit these
+.secret_key
+.env
+chat.db
+chat.db-journal
+*.db
+.aws/
+*.pem
+
+# Old snapshot / backup of the project
+code/
+code.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,9 @@
+# Local-only override: mounts your ~/.aws folder read-only so boto3 uses your profile.
+services:
+  chatbot:
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${USERPROFILE:-${HOME}}/.aws:/home/appuser/.aws:ro
+    environment:
+      AWS_PROFILE: ${AWS_PROFILE:-default}

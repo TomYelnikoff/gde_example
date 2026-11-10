@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+chat.db
+chat.db-journal
+.secret_key
+test_bedrock.py
+.git/
+.gitignore
+.env
+.aws/
+Dockerfile
+docker-compose.yml
+DEPLOY.md

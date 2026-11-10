@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat Assistant</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="layout">
+    <aside id="sidebar" class="sidebar" aria-label="Chat history">
+      <div class="side-head">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <button id="close-side" class="icon-btn mobile-only" type="button" aria-label="Close sidebar">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <button id="new-chat" class="new-chat" type="button">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        New chat
+      </button>
+
+      <div class="search">
+        <input id="search" type="search" placeholder="Search chats" aria-label="Search chats">
+      </div>
+
+      <nav id="history" class="history"></nav>
+
+      <div class="side-foot">
+        <div class="account">
+          <div class="account-avatar" aria-hidden="true">{{ email[0] }}</div>
+          <div class="account-email" title="{{ email }}">{{ email }}</div>
+          <button id="signout" class="signout" type="button">Sign out</button>
+        </div>
+        <div id="plan" class="plan" hidden>
+          <div class="plan-row"><span id="plan-name" class="plan-name"></span><span id="plan-count" class="plan-count"></span></div>
+          <div id="meter" class="meter" role="progressbar" aria-label="Free messages used" aria-valuemin="0"><div id="meter-fill" class="meter-fill"></div></div>
+          <button id="upgrade" class="upgrade" type="button" disabled title="Payments are coming soon" aria-disabled="true">Upgrade to paid · coming soon</button>
+        </div>
+        <div class="bedrock-info">
+          <span class="dot"></span>
+          <div>
+            <div class="foot-title">Amazon Bedrock</div>
+            <div class="foot-sub">{{ model_id }} · {{ region }}</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div id="scrim" class="scrim"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button id="open-side" class="icon-btn mobile-only" type="button" aria-label="Open sidebar">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <h1 id="convo-title">New chat</h1>
+        <span id="convo-usage" class="usage-pill" hidden title="Total tokens used by this conversation"></span>
+      </header>
+
+      <main id="chat" class="chat" aria-live="polite">
+        <div id="thread" class="thread">
+          <section id="welcome" class="welcome">
+            <h2>How can I help you today?</h2>
+            <div class="suggestions">
+              <button type="button" class="chip">Explain how DNS works in simple terms</button>
+              <button type="button" class="chip">Write a Python function to merge two sorted lists</button>
+              <button type="button" class="chip">Give me 5 ideas for a team offsite</button>
+              <button type="button" class="chip">Draft a polite follow-up email</button>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <footer class="composer-wrap">
+        <div id="limit-banner" class="limit-banner" role="status" hidden>
+          <div class="limit-text"><strong id="limit-title"></strong><span>Upgrade to a paid account to keep chatting. You can still read your past conversations.</span></div>
+          <button class="upgrade" type="button" disabled title="Payments are coming soon" aria-disabled="true">Upgrade to paid · coming soon</button>
+        </div>
+        <form id="composer" class="composer" autocomplete="off">
+          <textarea id="input" rows="1" placeholder="Message the assistant…" aria-label="Message" maxlength="20000"></textarea>
+          <button id="send" class="send" type="submit" aria-label="Send message">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          </button>
+        </form>
+        <p class="hint">AI can make mistakes. Enter to send · Shift+Enter for a new line.</p>
+      </footer>
+    </div>
+  </div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
